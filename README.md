@@ -24,9 +24,9 @@ but that is untested — see [What has not been checked](#what-has-not-been-chec
 - **OK** on an app opens it. When Main Menu returns to the foreground, the water splash and character descent replay. Returning from Device Care takes you directly to the pending app check.
 - **INPUTS** lists what the TV reports as connected (HDMI ports, antenna). OK switches to a source, Back returns.
   (A first attempt — see [What has not been checked](#what-has-not-been-checked).)
-- **APPS** is always the last entry. It lists installed apps and lets you choose which ones appear on Main Menu.
-  Its seven-row layout follows the Quest screen at 1:13 in the menu recording.
-- Home, Inputs and Apps play the recorded cursor, confirmation and Back sounds from the Persona 3 Reload menu footage.
+- **SETTINGS** is always the last Home entry. Its circular room and command list follow the System menu at 1:38.
+  **Apps** opens the Quest-style app manager. **Input Settings** uses the Persona roster at 0:38 to list and rename TV inputs.
+- Menu actions play the recorded cursor, confirmation, Back, and dialog-opening sounds from the corresponding game screens.
 - **Remote**: Up/Down, OK, Back (on the menu, Back puts the app away). Red button: a readout of speed and what the
   TV reported. Green button: step through the four picture levels (the choice is remembered).
 
@@ -153,11 +153,15 @@ supports being started this way; whether this one does on your model is somethin
 
 ## Make it yours
 
-Open **APPS** at the bottom of Main Menu. Use **Up/Down** to select an app and press **OK** to switch between
-**Shown** and **Hidden**. Use **Left/Right** to move it earlier or later. Press **Back** to see your changes on
-Main Menu. You can also move or hide **INPUTS**. The launcher saves your order and visibility choices automatically.
+Open **Settings → Apps** from Main Menu. Use **Up/Down** to select an app and press **OK** to switch between
+**Shown** and **Hidden**. Use **Left/Right** to move it earlier or later. Press **Back** to return to Settings, then **Back** again for Main Menu. You can also move or hide **INPUTS**. The launcher saves your order and visibility choices automatically.
 
-The list refreshes from the TV when you open Apps and when the launcher returns to the foreground. Installed apps
+Open **Settings → Input Settings**, select a port, and press **OK** to rename it. Use the on-screen keyboard or
+a physical keyboard. **Save** applies the name in both the launcher’s Inputs list and Input Settings. **Back** cancels.
+Save an empty name to restore the default. Names are stored in Main Menu, keyed to the physical port, including
+disconnected inputs.
+
+Apps refreshes its inventory when you open it and when the launcher returns to the foreground. Installed apps
 in the default selection start out shown. Other installed apps start out hidden until you select them. To remove an installed app, hold **OK** on its row (or press the blue button) to see its name and the Device Care instructions.
 Press **Settings/123** on the remote to reach Quick Settings. Go to **All Settings → Support → Device Care → Manage Storage**,
 select the named app, then choose **Delete** and confirm. Samsung controls which apps offer Delete.
@@ -194,7 +198,7 @@ Other things near the top of `app.js`: `VIS` (lines visible at once), `QUALITY` 
 | `tools/tv.sh connect`: "the TV does not answer" | The TV is in standby (switch it on), Developer Mode is off, or the address is wrong. |
 | `install failed[118, -12] Check certificate error : Invalid certificate chain` | The package was signed with a certificate the TV does not accept: use a **Samsung** profile whose distributor certificate lists this TV's DUID. |
 | The SDK fails to sign, or a widget check reports a missing signature | Check the profile name with `tizen security-profiles list` and confirm the SDK can access its certificate passwords (see [Without a desktop](#without-a-desktop)). |
-| An installed app is missing from Main Menu | Open **APPS** to refresh the list. Find the app, press **OK** if it says **Hidden**, and press **Back**. |
+| An installed app is missing from Main Menu | Open **Settings → Apps** to refresh the list. Find the app, press **OK** if it says **Hidden**, then press **Back** twice to return Home. |
 | The picture is soft / less detailed | A lower picture level is selected. Green button steps through them (2 is the normal one). |
 | Two minutes after the last key press the TV shows its screensaver | The TV's own doing (reported for Samsung's OLED models); asking the TV to keep it off had no effect. Any key should bring the menu back. |
 | The red-button readout shows well under 60 fps after sitting idle | Same cause: with the TV's screensaver in front, the page loses the graphics chip to it (60 → about 42 frames a second here). The app notices and draws less often until it is in front again. |
@@ -249,7 +253,7 @@ Q (level). Without a TV the app shows its built-in list and sample sources.
 | `?q=0` … `?q=3` | fix the picture level |
 | `?debug=1` | start with the readout on |
 | `?skip=3000` | start 3 seconds in (past the opening) |
-| `?script=home` (`all`, `inputs`, `launch`) | play a scripted run of key presses |
+| `?script=home` (`all`, `inputs`, `launch`, `settings`, `appSettings`, `inputSettings`) | play a scripted run of key presses |
 | `?demo=9`, `?p3=1` | other menu contents (a nine-line list; the game's own words) |
 | `?nogl=1` | draw the opening foam without WebGL |
 
@@ -351,7 +355,7 @@ TV widget include the [full license](LICENSE) and [third-party notices](NOTICE).
 ### Artwork and fonts
 
 This is a personal fan project, not connected with or endorsed by ATLUS or SEGA. *Persona 3 Reload* and its artwork
-belong to them. `assets/hero*.png` and `refs/main.jpg` come from a screenshot of the game. The Home and Quest
+belong to them. `assets/hero*.png` and `refs/main.jpg` come from a screenshot of the game. The Home, Quest, System and Persona
 backdrops, animation frames and sounds in `assets/` come from the supplied *Persona 3 Reload – Menus* recording.
 Redistribution of the game media requires separate permission from its rights holders.
 

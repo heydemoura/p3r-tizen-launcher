@@ -62,7 +62,7 @@ const CATALOG = [
   { key: 'apple', label: 'APPLE TV', cmd: 'Watch Apple TV', names: [/^apple tv(\+)?$/i], ids: ['com.samsung.tv.aria-video', '3201807016597'] },
 ];
 const INPUTS_ENTRY = { key: 'inputs', label: 'INPUTS', cmd: 'Switch Source', screen: 'list' };
-const SETTINGS_ENTRY = { key: 'settings', label: 'APPS', cmd: 'Choose apps for the Main Menu', screen: 'settings' };
+const SETTINGS_ENTRY = { key: 'settings', label: 'SETTINGS', cmd: 'Configure apps and inputs', screen: 'settings' };
 const catalogByKey = new Map(CATALOG.map(entry => [entry.key, entry]));
 function installedEntry(appId, displayName, preset) {
   if (preset) return { ...preset, appId, displayName };
@@ -77,7 +77,7 @@ let discoveredApps = TV && !CAPTURE ? [] : CATALOG.filter(a => a.key !== 'moonli
 let menuChoices = new Map([INPUTS_ENTRY, ...discoveredApps].map(entry => [entry.key, entry]));
 let APPS = [INPUTS_ENTRY, ...discoveredApps, SETTINGS_ENTRY];
 if (Q.get('demo') === '9') APPS = [['NETFLIX', 'Watch Netflix'], ['PLEX', 'Open the Library'], ['GAMES', 'Play Cloud Games'], ['YOUTUBE', 'Watch YouTube'], ['DISNEY+', 'Watch Disney+'],
-  ['SPOTIFY', 'Play Music'], ['PRIME VIDEO', 'Watch Prime Video'], ['APPS', 'Choose apps for the Main Menu']].map(([label, cmd]) => ({ label, cmd, ids: [] })).concat([INPUTS_ENTRY]);
+  ['SPOTIFY', 'Play Music'], ['PRIME VIDEO', 'Watch Prime Video']].map(([label, cmd]) => ({ label, cmd, ids: [] })).concat([SETTINGS_ENTRY, INPUTS_ENTRY]);
 if (Q.get('p3')) APPS = ['SKILL', 'ITEM', 'EQUIP', 'PERSONA', 'STATS', 'QUEST', 'SOCIAL LINK', 'CALENDAR', 'SYSTEM'].map(label => ({ label, cmd: 'Use a Skill', ids: [] }));
 const cmdOf = a => a.missing ? 'Not installed on this TV' : a.cmd;
 
@@ -97,7 +97,11 @@ const DEMO_SOURCES = [
   { name: 'AirPlay', port: 'CAST', info: ['Screen mirroring from a phone', 'Waiting for a device.'], kind: 'pc' },
   { name: 'USB Drive', port: 'USB', dim: true, info: ['No drive connected', ''], kind: 'pc' },
 ];
-let SOURCES = TV ? [] : DEMO_SOURCES;
+const INPUT_NAMES_KEY = 'mainmenu.input-names.1';
+let inputNames = new Map();
+let SOURCES = [];
+const settingsHub = makeSettingsHub();
+const inputSettings = makeInputSettings();
 const FAKE_NOW = new Date(2026, 10, 22, 21, 48, 0);
 
 // ───────────────────────── state ─────────────────────────
@@ -106,7 +110,8 @@ const S = {
   sel: 0, tSel: -1e6, prevSel: 0,
   top: 0, prevTop: 0, tTop: -1e6,          // first line of the visible window, for lists longer than the window
   lsel: 0, tLsel: -1e6,
-  settingsSel: 0,
+  settingsSel: 0, hubSel: 0, prevHubSel: 0, tHubSel: -1e6,
+  inputSel: 0, prevInputSel: 0, tInputSel: -1e6,
   tLaunch: -1e6, launchApp: null,
   notice: null, tNotice: -1e6,          // short message shown in place of the command text
   debug: !!Q.get('debug'), passthrough: false,
@@ -1119,7 +1124,7 @@ function buildSettingsBase() {
   drawSettingsTable(settingsTableEdge.x, 0);
   settingsBaseDirty = false;
 }
-function drawSettings(t) {
+function drawApps(t) {
   if (settingsDirty) {
     const rows = settingsRows(), index = S.settingsSel, row = rows[index];
     const first = Math.max(0, index - SETTINGS_ROWS + 1);
@@ -1165,7 +1170,7 @@ function drawSettings(t) {
     }
     settingsDirty = false;
   }
-  const age = S.mode === 'settings' ? t - S.tMode : 1000;
+  const age = S.mode === 'apps' ? t - S.tMode : 1000;
   const listIn = eOut(prog(age, 400, 125)), focusIn = eOut(prog(t, settingsFocus.since, 100));
   const x = (1 - listIn) * -48;
   if (age >= 580 && questBoard) {
@@ -1326,12 +1331,47 @@ function drawOpening(t, lp) {
 
 // ───────────────────────── frame ─────────────────────────
 let _pt = 0; const mark = name => { if (!PROF) return; g.getImageData(0, 0, 1, 1); const n = performance.now(); if (name) (window.__prof = window.__prof || {})[name] = (window.__prof[name] || 0) + n - _pt; _pt = n; };
+function drawHub(t, age) {
+  g.save(); T0();
+  settingsHub.draw(g, t, S.hubSel, age, t - S.tHubSel, S.prevHubSel, reduceMenuMotion.matches);
+  g.restore();
+}
+function drawSettingsChild(mode, t, age) {
+  g.save(); T0();
+  if (mode === 'apps') drawApps(t);
+  else {
+    const top = Math.max(0, S.inputSel - 7);
+    const status = !SOURCES.length && (S.sourcesState === 'asking' ? 'Reading TV inputs…' :
+      S.sourcesState === 'failed' ? 'Could not read TV inputs. Press OK to retry.' : 'No inputs available.');
+    inputSettings.draw(g, t, SOURCES, S.inputSel, top, age, t - S.tInputSel, S.prevInputSel, reduceMenuMotion.matches, status || '');
+  }
+  g.restore();
+}
 function render() {
   const t = S.t;
   T0(); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
-  if (S.mode === 'settings' && t - S.tMode >= 230) {
+  const age = Math.max(0, t - S.tMode), reduced = reduceMenuMotion.matches;
+  if (S.mode === 'apps' || S.mode === 'inputSettings') {
     foamOff();
-    drawSettings(t);
+    if (age < 230 && !reduced) {
+      drawHub(t, 1200);
+      g.save(); g.beginPath(); g.arc(1000, 515, 1210 * eIO(age / 230), 0, Math.PI * 2); g.clip();
+    }
+    drawSettingsChild(S.mode, t, age);
+    if (age < 230 && !reduced) g.restore();
+    if (S.debug) drawDebug();
+    return;
+  }
+  if (S.mode === 'settings' && (S.prevMode !== 'home' || age >= 350 || reduced)) {
+    foamOff();
+    drawHub(t, S.prevMode === 'home' ? age : 1200 + age);
+    if (!reduced && age < 190 && (S.prevMode === 'apps' || S.prevMode === 'inputSettings')) {
+      g.save(); g.beginPath();
+      const edge = W * eIO(age / 190);
+      g.moveTo(edge + 120, 0); g.lineTo(W + 120, 0); g.lineTo(W + 120, H); g.lineTo(edge, H); g.closePath(); g.clip();
+      drawSettingsChild(S.prevMode, t, 1200);
+      g.restore();
+    }
     if (S.debug) drawDebug();
     return;
   }
@@ -1417,18 +1457,10 @@ function render() {
   drawFoam(t); mark('foam');
   if (lp >= 0) drawOpening(t, lp);
   T0();
-  if (S.mode === 'settings') {
-    const reveal = eIO(prog(t, S.tMode, 230));
-    g.save(); g.beginPath(); g.arc(1000, 515, 1210 * reveal, 0, Math.PI * 2); g.clip();
-    drawSettings(t);
-    g.restore();
-  }
-  if (S.prevMode === 'settings' && S.mode === 'home' && t - S.tMode < 195 && settingsTitlePicture) {
-    const edge = lerp(-120, W, eIO(prog(t, S.tMode, 195)));
-    g.save();
-    g.beginPath(); g.moveTo(edge + 120, 0); g.lineTo(W + 120, 0);
-    g.lineTo(W + 120, H); g.lineTo(edge, H); g.closePath(); g.clip();
-    drawSettings(t);
+  if (S.mode === 'settings') drawHub(t, age);
+  if (S.prevMode === 'settings' && S.mode === 'home' && age < 250 && !reduced) {
+    g.save(); g.beginPath(); g.arc(1110, 455, 1500 * (1 - eIO(age / 250)), 0, Math.PI * 2); g.clip();
+    drawHub(t, 1200);
     g.restore();
   }
   if (S.debug) drawDebug();
@@ -1449,10 +1481,10 @@ function rehearse(k) {
   else if (k === 2 || k === 3) { if (app >= 0) { S.sel = app; S.mode = 'launch'; S.holdLaunch = true; S.tLaunch = k === 2 ? 8750 : 8000; } }      // an app opening: the wedge, then the card
   else if (k === 4) S.mode = 'list';                                                       // the Inputs screen (last: the TV's list of sources has had time to arrive)
   else if (k === 5) { S.prevMode = 'list'; S.tMode = 8800; }                               // on the way back from it: both at once
-  else if (k === 6) { S.mode = 'settings'; S.tMode = S.t - 170; } // moving board and water inside the reveal
+  else if (k === 6) { S.mode = 'apps'; S.tMode = S.t - 170; } // moving board and water inside the reveal
   else if (k === 7) S.t = 850; // falling portrait and moving foam
   else if (k === 8) S.t = 1400; // wipe into the first animated Home pose
-  else if (k >= QUEST_POSES_START) { S.mode = 'settings'; S.t = 8000 + (k - QUEST_POSES_START) * 250; } // one Quest pose at display size
+  else if (k >= QUEST_POSES_START) { S.mode = 'apps'; S.t = 8000 + (k - QUEST_POSES_START) * 250; } // one Quest pose at display size
   try { render(); } catch (e) { oops('rehearsal', e); }
   if (k >= QUEST_POSES_START && k - QUEST_POSES_START < SETTINGS_ROWS) {
     const index = k - QUEST_POSES_START, row = settingsRows()[index];
@@ -1500,6 +1532,7 @@ window.__diag = () => { const st = recStats(180); return { ua: navigator.userAge
   fps: st.fps, frameMs: st.fps ? +(1000 / st.fps).toFixed(2) : 0, drawMs: st.js, perf: st, auto: auto.on ? 'watching' : 'off', foam: fx ? 'webgl' : '2d', jobs: jobs.length + urgent.length, covered: front.covered, focus: document.hasFocus(), sinceKey: Math.round((performance.now() - front.key) / 1000),
   apps: diag.apps, menu: APPS.map(a => ({ label: a.label, appId: a.appId || null, missing: !!a.missing })), top: S.top, sources: SOURCES.map(s => s.name + (s.dim ? ' (empty)' : '')), sourcesInfo: diag.sources, notes: diag.notes, errors: diag.errors, mode: S.mode, sel: S.sel,
   homeMotion: { backend: homeRenderer?.backend, pages: homeRenderer ? HOME_MOTION_FRAMES.pages.length : 0, width: motionCanvas?.width, height: motionCanvas?.height, pose: lastHomePose },
+  inputSettings: { selected: S.inputSel, rows: SOURCES.map(({ key, name, defaultName, connected }) => ({key, name, defaultName, connected})), editing: nameEditor.isOpen() },
   menuSettings: { state: appsState, removal, selected: S.settingsSel, rows: settingsRows() } }; };
 window.__lab = { S, get homePose() { return lastHomePose; }, auto, front, jobs, OFF, setQuality: n => setQuality(n), level: () => q };      // handles for experiments on the TV (tools/, lab/)
 const LEVEL_KEY = 'mainmenu.level.5';
@@ -1671,7 +1704,8 @@ function removalResult(phase, message) {
 function prepareRemovalCheck() {
   // A query already in flight may have started before Settings closed.
   removal = { ...removal, phase: 'checking' };
-  S.prevMode = S.mode = 'settings';
+  S.hubSel = S.prevHubSel = 0;
+  S.prevMode = S.mode = 'apps';
   S.tMode = -1e6;
   const index = settingsRows().findIndex(row => row.key === removal.key);
   if (index >= 0) S.settingsSel = index;
@@ -1804,24 +1838,56 @@ function askTV() {           // back in front: note what to ask; the questions g
 }
 function tvIdle() {          // called once a frame while nothing is moving
   if (want.sources) { want.sources = false; askSources(); return; }
-  if (want.apps && (S.mode !== 'settings' || S.t - settingsFocus.since > 1000)) askApps();
+  if (want.apps && (S.mode !== 'apps' || S.t - settingsFocus.since > 1000)) askApps();
 }
+function readInputNames() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(INPUT_NAMES_KEY));
+    if (saved && typeof saved === 'object' && !Array.isArray(saved))
+      inputNames = new Map(Object.entries(saved).filter(([, value]) => typeof value === 'string' && value.trim()));
+  } catch (_) { /* Use the TV's names when storage is unavailable. */ }
+}
+function updateSources(rows) {
+  const focusedPort = SOURCES[S.inputSel]?.key, watchingPort = SOURCES[S.lsel]?.key;
+  SOURCES = rows.map(row => ({ ...row, name: inputNames.get(row.key) || row.defaultName }));
+  const selected = SOURCES.findIndex(row => row.key === focusedPort);
+  S.inputSel = selected >= 0 ? selected : clamp(S.inputSel, 0, Math.max(0, SOURCES.length - 1));
+  if (selected < 0) { S.prevInputSel = S.inputSel; S.tInputSel = -1e6; }
+  const live = SOURCES.findIndex(row => row.key === watchingPort && !row.dim);
+  S.lsel = live >= 0 ? live : Math.max(0, SOURCES.findIndex(row => !row.dim));
+  if (sized) listChanged();
+}
+function saveInputName(row, value) {
+  const name = value.trim().replace(/\s+/g, ' ');
+  const next = new Map(inputNames);
+  if (!name || name === row.defaultName) next.delete(row.key);
+  else next.set(row.key, name);
+  try { localStorage.setItem(INPUT_NAMES_KEY, JSON.stringify(Object.fromEntries(next))); }
+  catch (_) { return 'Could not save the name. Try again.'; }
+  inputNames = next;
+  updateSources(SOURCES);
+  return '';
+}
+const nameEditor = makeInputNameEditor(saveInputName, cue => playMenuCue(cue));
+let sourceQuery = 0;
 function askSources(atStart) {
   if (!TV) return;
+  const query = ++sourceQuery;
   S.sourcesState = 'asking'; if (atStart) asked.n++;
   const done = () => { if (atStart) { asked.n--; atStart = false; } };
   try {
     tizen.systeminfo.getPropertyValue('VIDEOSOURCE', v => {
+      if (query !== sourceQuery) { done(); return; }
       const mk = (s, on) => {
         const hdmi = s.type === 'HDMI', name = s.type === 'TV' ? 'TV antenna' : s.type + ' ' + s.number;
-        return { name, port: hdmi ? 'HDMI ' + s.number : String(s.type), live: on, dim: !on, raw: s, kind: 'pc', stats: [['PORT', String(s.number)]], tags: ['LINK', 'NONE'],
+        return { key: s.type + ':' + s.number, defaultName: name, connected: on, port: hdmi ? 'HDMI ' + s.number : String(s.type), live: on, dim: !on, raw: s, kind: 'pc', stats: [['PORT', String(s.number)]], tags: ['LINK', 'NONE'],
           info: on ? ['Something is connected here.', 'Press OK to switch to it.'] : ['Nothing is connected here.', ''] };
       };
       const con = (v.connected || []).map(s => mk(s, true)), dis = (v.disconnected || []).map(s => mk(s, false));
-      SOURCES = con.concat(dis); S.sourcesState = 'ok'; S.lsel = clamp(S.lsel, 0, Math.max(0, con.length - 1));
+      S.sourcesState = 'ok'; updateSources(con.concat(dis));
       diag.sources = `${con.length} connected, ${dis.length} empty`;
-      done(); listChanged();
-    }, e => { done(); S.sourcesState = 'failed'; oops('sources', e); });
+      done();
+    }, e => { done(); if (query !== sourceQuery) return; S.sourcesState = 'failed'; oops('sources', e); });
   } catch (e) { done(); S.sourcesState = 'failed'; oops('sources', e); }
 }
 function say(text) { S.notice = text; S.tNotice = S.t; }
@@ -1856,7 +1922,7 @@ function leaveSource() {
 }
 
 // Short recordings from the menu footage. Read the packaged files during the opening.
-const menuCueNames = ['focus', 'confirm', 'back'];
+const menuCueNames = ['focus', 'confirm', 'back', 'dialog'];
 const menuCues = new Map(), playingCues = new Set();
 let menuAudio = null, cueRequest = 0, lastCueAt = -Infinity;
 function warmMenuAudio() {
@@ -1948,9 +2014,9 @@ function act(name, t) {
       if (APPS[S.sel].missing) { say(notHere(APPS[S.sel])); if (TV) want.apps = true; }      // …and look again: it may have been installed since
       else if (APPS[S.sel].screen === 'list') { S.prevMode = 'home'; S.mode = 'list'; S.tMode = t; S.tLsel = t + 300; if (TV) { if (SOURCES.length) want.sources = true; else askSources(); } }      // the list is checked again once it has slid in
       else if (APPS[S.sel].screen === 'settings') {
-        S.prevMode = 'home'; S.mode = 'settings'; S.tMode = t;
-        S.settingsSel = 0; S.notice = null; settingsDirty = true;
-        if (TV) want.apps = true;      // refresh after the reveal and any active cursor movement
+        S.hubSel = S.prevHubSel = 0; S.tHubSel = -1e6;
+        inputSettings.warmup();
+        openScreen('settings', t);
       }
       else { S.mode = 'launch'; S.tLaunch = t; S.launchApp = APPS[S.sel]; if (!CAPTURE) wantOpen(S.sel, urgent, false); }
       if (S.mode !== 'home') return 'confirm';
@@ -1960,21 +2026,57 @@ function act(name, t) {
       let n = S.lsel + (name === 'down' ? 1 : -1);
       if (n >= 0 && n < SOURCES.length && !SOURCES[n].dim && n !== S.lsel) { S.lsel = n; S.tLsel = t; return 'focus'; }
     }
-    else if (name === 'ok' && SOURCES[S.lsel]) {
+    else if (name === 'ok' && SOURCES[S.lsel] && !SOURCES[S.lsel].dim) {
       const source = SOURCES[S.lsel];
       showSource(source);
       if (TV && source.raw && !source.dim) return 'confirm';
     }
     else if (name === 'back') { S.prevMode = 'list'; S.mode = 'home'; S.tMode = t; return 'back'; }
   } else if (S.mode === 'settings') {
+    if (name === 'back') { openScreen('home', t); return 'back'; }
+    if (name === 'up' || name === 'down') {
+      const next = name === 'up' ? 0 : 1;
+      if (next === S.hubSel) return;
+      S.prevHubSel = S.hubSel; S.hubSel = next; S.tHubSel = t;
+      return 'focus';
+    }
+    if (name === 'ok') {
+      if (S.hubSel === 0) {
+        openScreen('apps', t); S.settingsSel = 0; settingsDirty = true;
+        if (TV) want.apps = true;
+      } else {
+        openScreen('inputSettings', t); S.tInputSel = -1e6;
+        S.prevInputSel = S.inputSel;
+        if (TV) askSources();
+      }
+      return 'confirm';
+    }
+  } else if (S.mode === 'apps') {
     if (name === 'manage' || removal) return removalAction(name);
-    if (name === 'back') {
-      S.prevMode = 'settings'; S.mode = 'home'; S.tMode = t;
-      return 'back';
-    } else return adjustMenu(name);
+    if (name === 'back') { openScreen('settings', t); return 'back'; }
+    return adjustMenu(name);
+  } else if (S.mode === 'inputSettings') {
+    if (name === 'back') { openScreen('settings', t); return 'back'; }
+    if (name === 'up' || name === 'down') {
+      const next = clamp(S.inputSel + (name === 'down' ? 1 : -1), 0, Math.max(0, SOURCES.length - 1));
+      if (next === S.inputSel) return;
+      S.prevInputSel = S.inputSel; S.inputSel = next; S.tInputSel = t;
+      return 'focus';
+    }
+    if (name === 'ok') {
+      if (!SOURCES.length) { if (TV) askSources(); return; }
+      nameEditor.open(SOURCES[S.inputSel]);
+      return 'dialog';
+    }
   }
 }
+function openScreen(mode, t) {
+  S.prevMode = S.mode; S.mode = mode; S.tMode = t; S.notice = null;
+}
 const SCRIPTS = {
+  settings: [[2400, 'up'], [3000, 'ok']],
+  appSettings: [[2400, 'up'], [3000, 'ok'], [4600, 'ok']],
+  inputSettings: [[2400, 'up'], [3000, 'ok'], [4200, 'down'], [4800, 'ok']],
   all: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => [2000 + i * 500, 'down']),
   home: [[3300, 'down'], [4300, 'down'], [5200, 'down'], [6300, 'down'], [7100, 'down'], [7900, 'down'], [8700, 'down'], [9500, 'down'], [10300, 'down'], [11300, 'down'], [12300, 'up'], [13100, 'up']],
   inputs: [[5100, 'ok'], [7000, 'down'], [8000, 'down'], [9000, 'up'], [10300, 'back']],
@@ -2012,6 +2114,8 @@ function start() {
   early();
   lap('fonts + picture loaded');
   if (!CAPTURE && !DEMO_MENU) readMenuPreferences();
+  if (!CAPTURE) readInputNames();
+  if (!TV) updateSources(DEMO_SOURCES.map(s => ({ ...s, key: s.port, defaultName: s.name, connected: !s.dim })));
   // Use the saved TV inventory immediately, and reconcile it with a fresh snapshot on every start.
   const cold = TV && !CAPTURE && !DEMO_MENU;
   if (cold) rememberedMenu();
@@ -2021,7 +2125,9 @@ function start() {
   const p0 = performance.now(); setQuality(level); diag.setup.pictures = Math.round(performance.now() - p0);
   if (CAPTURE) {
     eager = false;
-    loadHomeFrames().then(() => { window.renderAt(+Q.get('at') || 0); window.ready = true; });
+    Promise.all([loadHomeFrames(), settingsHub.ready, inputSettings.ready]).then(() => {
+      window.renderAt(+Q.get('at') || 0); window.ready = true;
+    });
     return;
   }
   prepareMenuCues();
@@ -2045,13 +2151,13 @@ function start() {
     if (e.keyCode !== 13 || !okHold) return;
     const press = okHold;
     cancelHold(); e.preventDefault();
-    if (!press.long && !document.hidden && S.mode === 'settings' && !removal &&
+    if (!press.long && !document.hidden && S.mode === 'apps' && !removal &&
         settingsRows()[S.settingsSel]?.key === press.key) playMenuCue(adjustMenu('ok'));
   });
   addEventListener('blur', () => { cancelHold(); seen(true); }); addEventListener('focus', () => seen(false));
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      cancelHold(); silenceMenuCues();
+      cancelHold(); nameEditor.close(); silenceMenuCues();
       return;
     }
     // Some TVs report their initial foreground transition after startup has begun.
@@ -2076,22 +2182,24 @@ function start() {
     if (k !== 13) cancelHold();
     front.key = performance.now();
     if (front.covered) { if (!document.hasFocus()) { front.lies = true; note('keys arrive while the TV says the page is not in front; ignoring that from now on'); } front.covered = false; last = 0; }
+    if (nameEditor.isOpen()) { nameEditor.keydown(e); return; }
     if (k === 403 || k === 68) { S.debug = !S.debug; return; }                                   // red button / D
     if (k === 404 || k === 81) { auto.on = false; setQuality((q + 3) % 4); saveLevel(); note('level set by hand: ' + q); return; }   // green / Q
     const m = { 38: 'up', 40: 'down', 37: 'left', 39: 'right', 13: 'ok', 27: 'back', 8: 'back', 10009: 'back', 406: 'manage', 46: 'manage' }[k]; if (!m) return;
     if (S.passthrough) { if (m === 'back') { leaveSource(); playMenuCue('back'); } return; }
     if (roll) return;                                                                            // the opening has not begun
+    const inSettings = ['settings', 'apps', 'inputSettings'].includes(S.mode);
     const openingSettings = S.mode === 'home' && APPS[S.sel].screen === 'settings';
-    if (S.mode === 'settings') e.preventDefault();
-    if ((openingSettings || S.mode === 'settings') && m === 'ok' && (e.repeat || okHold)) return;
-    if (m === 'manage' && (e.repeat || S.mode !== 'settings')) return;
-    if (S.mode === 'settings' && !removal && m === 'ok') {
+    if (inSettings) e.preventDefault();
+    if ((openingSettings || inSettings) && m === 'ok' && (e.repeat || okHold)) return;
+    if (m === 'manage' && (e.repeat || S.mode !== 'apps')) return;
+    if (S.mode === 'apps' && !removal && m === 'ok') {
       const row = settingsRows()[S.settingsSel];
       if (canManageRow(row)) {
         const press = okHold = { key: row.key, long: false };
         press.timer = setTimeout(() => {
           press.long = true;
-          if (S.mode === 'settings' && !document.hidden && settingsRows()[S.settingsSel]?.key === press.key)
+          if (S.mode === 'apps' && !document.hidden && settingsRows()[S.settingsSel]?.key === press.key)
             playMenuCue(removalAction('manage'));
         }, 650);
         return;

@@ -39,6 +39,18 @@ def payload(source, tag=None):
         "assets/menu-sfx/focus.wav", "assets/menu-sfx/confirm.wav", "assets/menu-sfx/back.wav",
     ]
     html = source_file(source, "index.html").read_text(encoding="utf-8")
+    # Release builds may package an older tag using today's build tools.
+    menus = {
+        "settings-hub": ["settings-hub/room.webp", "settings-hub/surface.webp"],
+        "input-settings": [f"input-settings/{name}.webp" for name in
+                           ("water", "surface", "unicorn", "rakshasa", "orpheus", "forneus", "archangel", "slime")],
+        "input-name-editor": ["menu-sfx/dialog.wav"],
+    }
+    for script, resources in menus.items():
+        path = f"assets/{script}.js"
+        if f'src="{path}"' in html:
+            paths.append(path)
+            paths.extend(f"assets/{resource}" for resource in resources)
     paths.extend(re.findall(r"fonts/[A-Za-z0-9_.-]+\.(?:otf|ttf)\b", html))
     frames = source_file(source, "assets/home-frames/index.js").read_text(encoding="utf-8")
     spec = re.fullmatch(r"\s*const HOME_MOTION_FRAMES\s*=\s*(\{.*\})\s*;\s*", frames, re.DOTALL)

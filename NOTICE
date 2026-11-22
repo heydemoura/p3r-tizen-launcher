@@ -10,7 +10,8 @@ and SEGA. The character art, backgrounds, recorded menu sounds, animation
 data, app icon, and screenshots incorporate material from the game. The
 contributors grant no rights to that third-party material. In this repository
 it appears in assets/hero*.png, assets/*.webp, assets/home-frames/,
-assets/menu-sfx/, tv/icon.png, refs/main.jpg, and the screenshots in docs/.
+assets/settings-hub/, assets/input-settings/, assets/menu-sfx/, tv/icon.png,
+refs/main.jpg, and the screenshots in docs/.
 
 The bundled font files are distributed under the SIL Open Font License 1.1.
 Their copyright notices and license text are in tv/FONTS.txt in the source

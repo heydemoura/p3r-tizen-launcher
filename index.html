@@ -28,10 +28,39 @@ canvas{display:block;width:100vw;height:100vh}
 /* while an HDMI source is on screen the TV draws it behind the page, so the page gets out of the way */
 html.through,html.through body{background:transparent}
 html.through canvas{visibility:hidden}
+#rename-input[hidden],#rename-error:empty{display:none}
+#rename-input{position:fixed;inset:0;z-index:4;display:grid;place-items:center;background:rgba(0,3,37,.57);font-family:RowB,sans-serif;color:#fff}
+#rename-input .rename-panel{position:relative;box-sizing:border-box;width:82vw;padding:1.6vw 3vw 2vw 21vw;background:linear-gradient(100deg,#030c48,#02052d);box-shadow:.7vw .7vw 0 #02062e99;animation:rename-open 150ms cubic-bezier(.15,.85,.24,1)}
+.rename-panel::before{content:"";position:absolute;right:0;bottom:0;width:12vw;height:2.2vw;background:#1031ff;clip-path:polygon(100% 0,100% 100%,0 100%);pointer-events:none}
+.rename-panel .edit-title{position:absolute;top:-.8vw;left:1vw;color:#1238ff;letter-spacing:-.65vw;font:8.4vw/.9 MenuI,sans-serif;transform:rotate(-7deg) skew(-6deg)}
+.edit-title::after{content:"!";position:absolute;left:7.8vw;top:-3.4vw;color:transparent;-webkit-text-stroke:.11vw #fff;font-size:16vw;transform:skew(-12deg)}
+#rename-label{display:block;font:1.8vw RowB,sans-serif}
+#rename-port{margin-left:.6vw;color:#78f2ff}
+#input-alias{box-sizing:border-box;width:100%;margin:.5vw 0 .8vw;padding:.35vw .7vw;background:white;color:#080d29;border:0;border-left:.45vw solid #ff2670;border-radius:0;font:2vw RowB,sans-serif}
+#rename-keys{display:grid;gap:.32vw}
+#rename-keys .key-row{display:flex;gap:.32vw;justify-content:center}
+#rename-keys button{border:0;min-width:4.25vw;padding:.24vw .52vw;font:1.55vw RowB,sans-serif;background:#071a56;color:#8cefff;cursor:pointer}
+#rename-keys .commands button{flex:1;min-width:0}
+#rename-keys button:focus{outline:0;background:#fff;color:#071431;box-shadow:inset 0 .22vw #ff276a}
+#rename-error{margin-top:.5vw;color:#fff;font:1.25vw RowB,sans-serif}
+@keyframes rename-open{from{opacity:.25;transform:scale(.97,.86)}to{opacity:1;transform:scale(1)}}
+@media(prefers-reduced-motion:reduce){#rename-input .rename-panel{animation:none}}
 </style>
 </head>
 <body>
 <canvas id="c" width="1920" height="1080"></canvas>
+<form id="rename-input" role="dialog" aria-modal="true" aria-labelledby="rename-title rename-port" hidden>
+  <div class="rename-panel">
+    <h1 id="rename-title" class="edit-title">EDIT</h1>
+    <label id="rename-label" for="input-alias">Input name <span id="rename-port"></span></label>
+    <input id="input-alias" type="text" maxlength="32" autocomplete="off" spellcheck="false">
+    <div id="rename-keys" aria-label="On-screen keyboard"></div>
+    <p id="rename-error" role="alert"></p>
+  </div>
+</form>
+<script src="assets/settings-hub.js"></script>
+<script src="assets/input-settings.js"></script>
+<script src="assets/input-name-editor.js"></script>
 <script src="assets/home-frames/index.js"></script>
 <script src="assets/home-frames/damage.js"></script>
 <script src="assets/home-motion.js"></script>

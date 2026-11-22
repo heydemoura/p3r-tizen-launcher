@@ -45,7 +45,15 @@ await pg.addInitScript(([full, hideReal]) => {
       launch: (id, ok, err) => { calls.push('launch ' + id); setTimeout(() => (window.__failLaunch ? err({ name: 'NotFoundError' }) : ok()), 60); },
       getCurrentApplication: () => ({ appInfo: { id: 'MainMenuTV.Home' }, hide: () => calls.push('hide'), exit: () => calls.push('exit') }),
     },
-    systeminfo: { getPropertyValue: (what, ok) => { stamp(); calls.push('sysinfo ' + what); setTimeout(() => ok({ connected: [{ type: 'HDMI', number: 1 }, { type: 'HDMI', number: 3 }], disconnected: [{ type: 'HDMI', number: 2 }, { type: 'HDMI', number: 4 }, { type: 'TV', number: 1 }] }), 80); } },
+    systeminfo: { getPropertyValue: (what, ok) => {
+      stamp(); calls.push('sysinfo ' + what);
+      const hdmi = number => ({ type: 'HDMI', number });
+      const attached = sessionStorage.getItem('mock.hdmi2') === 'connected';
+      setTimeout(() => ok({
+        connected: (attached ? [3, 2, 1] : [1, 3]).map(hdmi),
+        disconnected: [...(attached ? [4] : [2, 4]).map(hdmi), { type: 'TV', number: 1 }],
+      }), 80);
+    } },
     tvwindow: {
       setSource: (src, ok) => { calls.push(`setSource ${src.type}${src.number}`); setTimeout(ok, 50); },
       show: (ok, err, rect, type, z) => { calls.push(`show ${rect.join(',')} ${type} ${z}`); setTimeout(ok, 50); },
@@ -68,10 +76,28 @@ async function selectHome(matches) {
   for (let i = 0; i < Math.min(up, down); i++) await pg.keyboard.press(down <= up ? 'ArrowDown' : 'ArrowUp');
   assert.equal((await diag()).sel, target);
 }
-async function openApps() {
-  await selectHome(item => item.label === 'APPS' && !item.appId);
+async function openSettings() {
+  await selectHome(item => item.label === 'SETTINGS' && !item.appId);
   await pg.keyboard.press('Enter');
   assert.equal((await diag()).mode, 'settings');
+}
+async function openApps() {
+  await openSettings();
+  await pg.keyboard.press('Enter');
+  assert.equal((await diag()).mode, 'apps');
+}
+async function openInputSettings() {
+  await openSettings();
+  await pg.keyboard.press('ArrowDown');
+  await pg.keyboard.press('Enter');
+  assert.equal((await diag()).mode, 'inputSettings');
+}
+async function selectInput(defaultName) {
+  const { rows, selected } = (await diag()).inputSettings;
+  const target = rows.findIndex(row => row.defaultName === defaultName);
+  assert.notEqual(target, -1, 'expected port in Input Settings');
+  for (let i = 0; i < Math.abs(target - selected); i++) await pg.keyboard.press(target < selected ? 'ArrowUp' : 'ArrowDown');
+  assert.equal((await diag()).inputSettings.selected, target);
 }
 async function selectRow(matches) {
   const { selected, rows } = (await diag()).menuSettings;
@@ -92,7 +118,7 @@ async function resumeHome() {
   }, null, {timeout: 4000});
   await pg.waitForFunction(() => window.__lab.S.t >= 1600);
 }
-await pg.waitForTimeout(4600);
+await pg.waitForFunction(() => window.__lab && window.__lab.S.t > 1600 && window.__calls.includes('inventory delivered'));
 let d = await diag();
 { const c = await calls(); console.log('questions to the TV:', c.filter(x => x.startsWith('getAppInfo')).length, 'by ID,', c.filter(x => x === 'getAppsInfo').length, 'full list,', c.filter(x => x.startsWith('sysinfo')).length, 'sources | first one', Math.round(await pg.evaluate(() => window.__firstAsk || 0)), 'ms after the page opened | apps:', d.apps && d.apps.how, '| held for', d.setup['held for'], 'ms'); }
 console.log('menu:', d.menu.map(m => `${m.label}${m.missing ? ' (missing)' : '=' + m.appId}`).join(' | '));
@@ -149,6 +175,79 @@ console.log('Back on home asks the TV to hide the app:', (await calls()).filter(
 await pg.keyboard.press('d'); await pg.waitForTimeout(600);
 await pg.screenshot({ path: `work/tv-${tag}-5-debug.png` });
 d = await diag(); console.log('errors:', JSON.stringify(d.errors), '| page errors:', errs.filter(e => !/ERR_FILE_NOT_FOUND/.test(e)).join('; ') || 'none');
+// Name an unplugged port, reconnect it in a different inventory position, and switch to it.
+await openInputSettings();
+const hdmi2 = d => d.inputSettings.rows.find(row => row.defaultName === 'HDMI 2');
+assert.equal(hdmi2(await diag()).connected, false);
+await selectInput('HDMI 2');
+await pg.keyboard.press('Enter');
+const editor = pg.locator('#rename-input');
+const field = pg.locator('#input-alias');
+await editor.waitFor({ state: 'visible' });
+assert.ok((await diag()).inputSettings.editing);
+const firstKey = await editor.locator('button:focus').textContent();
+await pg.keyboard.press('ArrowRight');
+const nextKey = await editor.locator('button:focus').textContent();
+assert.notEqual(nextKey, firstKey, 'remote arrows move the keyboard cursor');
+await pg.keyboard.press('Enter');
+assert.equal(await field.inputValue(), nextKey, 'OK on a character replaces the selected name');
+await pg.keyboard.press('Escape');
+assert.equal((await diag()).inputSettings.editing, false);
+assert.equal(hdmi2(await diag()).name, 'HDMI 2', 'cancel preserves the name');
+
+await pg.keyboard.press('Enter');
+await pg.keyboard.press('Enter'); // first letter on the remote keyboard
+await pg.keyboard.press('ArrowUp'); // wrap to the command row
+await pg.keyboard.press('ArrowLeft'); // wrap to Save
+assert.equal(await editor.locator('button:focus').getAttribute('data-key'), 'save');
+await pg.keyboard.press('Enter');
+assert.equal(hdmi2(await diag()).name, firstKey, 'a rename can be completed with the remote alone');
+await pg.keyboard.press('Enter');
+await pg.keyboard.type('Arcade');
+assert.ok(await field.evaluate(node => document.activeElement === node), 'hardware typing gives the text field focus');
+await pg.evaluate(() => {
+  const set = Storage.prototype.setItem;
+  Storage.prototype.setItem = function(key, value) {
+    if (key === 'mainmenu.input-names.1') throw new Error('Mock storage unavailable');
+    return set.call(this, key, value);
+  };
+  window.__restoreStorage = () => { Storage.prototype.setItem = set; };
+});
+await field.press('Enter');
+assert.ok(await editor.isVisible(), 'storage failure keeps the editable draft open');
+assert.equal(await field.inputValue(), 'Arcade');
+assert.equal(hdmi2(await diag()).name, firstKey);
+await pg.evaluate(() => window.__restoreStorage());
+await field.press('Enter');
+assert.equal(hdmi2(await diag()).name, 'Arcade');
+assert.ok((await diag()).sources.includes('Arcade (empty)'));
+await pg.evaluate(() => sessionStorage.setItem('mock.hdmi2', 'connected'));
+await pg.keyboard.press('Escape');
+assert.equal((await diag()).mode, 'settings');
+await pg.keyboard.press('Enter'); // returning to the hub retained the Input Settings selection
+await pg.waitForFunction(() => window.__diag().inputSettings.rows.some(row => row.name === 'Arcade' && row.connected));
+assert.equal(hdmi2(await diag()).name, 'Arcade');
+await reloadInventory();
+assert.equal(hdmi2(await diag()).name, 'Arcade', 'the physical HDMI port keeps its name after relaunch');
+await selectHome(item => item.label === 'INPUTS');
+await pg.keyboard.press('Enter');
+const aliasRow = (await diag()).sources.indexOf('Arcade');
+assert.notEqual(aliasRow, -1, 'the Inputs chooser shows the alias');
+const currentSource = await pg.evaluate(() => window.__lab.S.lsel);
+for (let i = 0; i < Math.abs(aliasRow - currentSource); i++) await pg.keyboard.press(aliasRow < currentSource ? 'ArrowUp' : 'ArrowDown');
+await pg.keyboard.press('Enter');
+await pg.waitForFunction(() => document.documentElement.classList.contains('through'));
+assert.equal((await calls()).filter(call => call.startsWith('setSource ')).at(-1), 'setSource HDMI2');
+await pg.keyboard.press('Escape'); // close passthrough
+await pg.keyboard.press('Escape'); // leave the Inputs chooser
+await openInputSettings();
+await selectInput('HDMI 2');
+await pg.keyboard.press('Enter');
+await field.fill('');
+await field.press('Enter');
+assert.equal(hdmi2(await diag()).name, 'HDMI 2', 'an empty alias restores the default name');
+await pg.evaluate(() => sessionStorage.removeItem('mock.hdmi2'));
+console.log('Input Settings remote typing, cancel, save, reconnect, relaunch, source selection and default-name reset passed.');
 // Use the normal remote controls throughout. Start from an older saved menu with a hidden app.
 await pg.evaluate(() => localStorage.setItem('mainmenu.menu.1', JSON.stringify({ order: ['inputs', 'spotify', 'youtube'], hidden: ['disney'] })));
 await reloadInventory();
@@ -211,7 +310,10 @@ for (const row of (await diag()).menuSettings.rows.filter(row => !row.hidden)) {
   await pg.keyboard.press('Enter');
 }
 await pg.keyboard.press('Escape');
-assert.deepEqual((await diag()).menu.map(item => item.label), ['APPS']);
+assert.equal((await diag()).mode, 'settings');
+await pg.keyboard.press('Escape');
+assert.equal((await diag()).mode, 'home');
+assert.deepEqual((await diag()).menu.map(item => item.label), ['SETTINGS']);
 await openApps();
 assert.ok((await diag()).menuSettings.rows.some(globoplay), 'Apps remains usable after hiding every shortcut');
 assert.deepEqual((await diag()).errors, []);
@@ -253,7 +355,7 @@ assert.deepEqual(d.menuSettings.rows.find(row => row.appId === xbox), xboxRow);
 await pg.keyboard.press('Escape');
 assert.ok(!(await diag()).menuSettings.removal);
 assert.equal(await pendingTarget(), null);
-assert.equal((await diag()).mode, 'settings');
+assert.equal((await diag()).mode, 'apps');
 
 async function checkInventory({visibilityChange = false, removed = false, fail = false} = {}) {
   await blue();
@@ -270,12 +372,12 @@ async function checkInventory({visibilityChange = false, removed = false, fail =
   await pg.waitForFunction(() => typeof window.__finishInventory === 'function', null, {timeout: 7000});
   await waitPhase('checking');
   const pending = await diag();
-  assert.equal(pending.mode, 'settings');
+  assert.equal(pending.mode, 'apps');
   assert.ok(pending.menu.some(item => item.appId === xbox), 'keep the shortcut until a fresh inventory arrives');
   await pg.evaluate(() => { window.__holdInventory = false; window.__finishInventory(); });
   await waitPhase(fail ? 'error' : removed ? 'removed' : 'present');
   if (visibilityChange) await pg.waitForTimeout(1500); // resume animation
-  assert.equal((await diag()).mode, 'settings');
+  assert.equal((await diag()).mode, 'apps');
 }
 
 await checkInventory();
@@ -293,7 +395,7 @@ assert.ok(!d.menuSettings.rows.some(row => row.appId === xbox));
 assert.ok(d.menuSettings.selected >= 0 && d.menuSettings.selected < d.menuSettings.rows.length);
 await pg.keyboard.press('Escape');
 assert.ok(!(await diag()).menuSettings.removal);
-assert.equal((await diag()).mode, 'settings');
+assert.equal((await diag()).mode, 'apps');
 assert.deepEqual(await launches(), initialLaunches, 'removal never launches an external app');
 
 // Check both an interrupted Device Care visit and a pending Samsung Apps handoff saved by 0.10.0.
@@ -316,7 +418,7 @@ for (const phase of ['guide', 'opening']) {
   await reloadInventory();
   await waitPhase('removed');
   d = await diag();
-  assert.equal(d.mode, 'settings');
+  assert.equal(d.mode, 'apps');
   assert.ok(!d.menu.some(item => item.appId === xbox));
   assert.ok(!d.menuSettings.rows.some(row => row.appId === xbox));
   assert.equal(await pendingTarget(), null);
