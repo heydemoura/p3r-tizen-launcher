@@ -1,0 +1,66 @@
+name: Release TV widget
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-widget-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      SOURCE_DIR: ${{ github.event_name == 'workflow_dispatch' && 'release-source' || '.' }}
+    steps:
+      - name: Check out the workflow revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      # A manual backfill may target a release that predates this workflow.
+      - name: Check out the tagged app for a manual build
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          path: release-source
+          persist-credentials: false
+
+      - name: Build the ready-to-sign widget
+        run: |
+          python3 tools/widget.py portable "$RUNNER_TEMP/MainMenu.wgt" --source "$SOURCE_DIR" --tag "$RELEASE_TAG"
+
+      - name: Attach the widget to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          api="repos/$GITHUB_REPOSITORY"
+          revision=$(gh api "$api/commits/refs/tags/$RELEASE_TAG" --jq '.sha')
+          if [[ "$revision" != "$(git -C "$SOURCE_DIR" rev-parse HEAD)" ]]; then
+            echo "The release tag moved during the build." >&2
+            exit 1
+          fi
+
+          widget="$RUNNER_TEMP/MainMenu.wgt"
+          digest="sha256:$(sha256sum "$widget" | cut -d ' ' -f 1)"
+          existing=$(gh api "$api/releases/tags/$RELEASE_TAG" --jq '.assets[] | select(.name == "MainMenu.wgt") | (.digest // "unknown")')
+          if [[ -z "$existing" ]]; then
+            gh release upload "$RELEASE_TAG" "$widget#MainMenu.wgt (sign with your Samsung TV profile)" --repo "$GITHUB_REPOSITORY"
+          elif [[ "$existing" != "$digest" ]]; then
+            echo "This release already has a different MainMenu.wgt." >&2
+            exit 1
+          fi

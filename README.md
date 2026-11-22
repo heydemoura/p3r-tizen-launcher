@@ -95,7 +95,23 @@ to install after that you will most likely need new ones.
 *I made mine without that window, on a computer with no desktop, using the helper in
 [Without a desktop](#without-a-desktop). The window is Samsung's documented way and gives the same kind of profile.*
 
-## 4. Build
+## 4. Download or build the widget
+
+**From a release.** GitHub Actions attaches a ready-to-sign `MainMenu.wgt` when a release is published.
+Download it and sign it with the Samsung profile from step 3. For updates, use the same author certificate
+as the installed app. [Download the latest widget](https://github.com/heydemoura/p3r-tizen-launcher/releases/latest/download/MainMenu.wgt)
+
+```sh
+mkdir -p build/download
+curl -fL https://github.com/heydemoura/p3r-tizen-launcher/releases/latest/download/MainMenu.wgt -o build/download/MainMenu.wgt
+tizen package -t wgt -s tv -o "$PWD/build" -- "$PWD/build/download/MainMenu.wgt"
+python3 tools/widget.py check build/MainMenu.wgt
+```
+
+Continue with step 5 to install the signed widget. To attach the download to an existing release, a maintainer
+can run **Actions → Release TV widget → Run workflow** on `main` and enter the release tag.
+
+**From source.** Build and sign the same app files using the checkout you want to install.
 
 ```sh
 npm run package -- tv         # signs build/MainMenu.wgt with the profile named tv
@@ -105,17 +121,13 @@ This runs `tools/build-tv.sh tv`. To use the same profile each time, set
 `TIZEN_PROFILE=tv` in `tools/local.env` and run `npm run package`. Use the profile
 that signed your first installation for updates. The script assembles the app in
 `dist/` and replaces the previous widget only after checking the app ID, package ID,
-and SDK signature files. To run the underlying SDK command by hand:
+and SDK signature files. To stage the files in a fresh directory and run the SDK command directly:
 
 ```sh
-mkdir -p dist/assets/menu-sfx dist/fonts build
-cp index.html app.js LICENSE NOTICE dist/
-cp -R assets/home-frames dist/assets/
-cp assets/home-motion.js assets/hero.png assets/home-scene.webp assets/quest-scene.webp assets/quest-idle.webp dist/assets/
-cp assets/menu-sfx/*.wav dist/assets/menu-sfx/
-cp fonts/* dist/fonts/ && cp tv/config.xml tv/icon.png dist/
-cp tv/FONTS.txt dist/fonts/LICENSES.txt
-tizen package -t wgt -s tv -o build -- dist          # writes "build/Main Menu.wgt"
+stage=$(mktemp -d)
+python3 tools/widget.py stage "$stage"
+mkdir -p build
+tizen package -t wgt -s tv -o "$PWD/build" -- "$stage"  # writes "build/Main Menu.wgt"
 ```
 
 ## 5. Install and start

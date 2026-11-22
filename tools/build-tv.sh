@@ -26,17 +26,7 @@ dist_dir="$PWD/dist"
 
 assemble() {
   rm -rf "$dist_dir"
-  mkdir -p dist/assets/menu-sfx dist/fonts
-  cp index.html app.js LICENSE NOTICE dist/
-  cp assets/home-motion.js assets/hero.png assets/home-scene.webp assets/quest-scene.webp assets/quest-idle.webp dist/assets/
-  cp -R assets/home-frames dist/assets/
-  cp assets/menu-sfx/{focus,confirm,back}.wav dist/assets/menu-sfx/
-  for f in $(grep -o 'fonts/[A-Za-z0-9_.-]*' index.html | sort -u); do
-    test -f "$f" || { echo "index.html names $f, which is not in the fonts folder"; exit 1; }
-    cp "$f" dist/fonts/
-  done
-  cp tv/config.xml tv/icon.png dist/
-  cp tv/FONTS.txt dist/fonts/LICENSES.txt
+  python3 tools/widget.py stage "$dist_dir"
 }
 
 # The SDK may return success for an unsigned package. Publish only a checked widget.
