@@ -1,0 +1,17 @@
+{
+  "name": "main-menu-tv",
+  "version": "0.1.0",
+  "license": "GPL-3.0-only",
+  "private": true,
+  "description": "A home screen for Samsung Tizen TVs, styled after the main menu of Persona 3 Reload (personal fan project).",
+  "scripts": {
+    "package": "bash tools/build-tv.sh",
+    "tv:install": "bash tools/tv.sh install",
+    "tv:launch": "bash tools/tv.sh run",
+    "check": "node tools/errs.mjs && node tools/tvmock.mjs",
+    "still": "node tools/cap.mjs still home 3000"
+  },
+  "devDependencies": {
+    "playwright": "^1.59.1"
+  }
+}

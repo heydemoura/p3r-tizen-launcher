@@ -1,0 +1,17 @@
+Main Menu for Samsung Tizen TVs
+Copyright 2026 the Main Menu contributors
+
+The contributors license their original work in this project, including the
+launcher, tools and documentation, under the GNU General Public License,
+version 3 only (SPDX identifier GPL-3.0-only). See LICENSE for the full terms.
+
+Persona 3 Reload belongs to its respective rights holders, including ATLUS
+and SEGA. The character art, backgrounds, recorded menu sounds, animation
+data, app icon, and screenshots incorporate material from the game. The
+contributors grant no rights to that third-party material. In this repository
+it appears in assets/hero*.png, assets/*.webp, assets/home-frames/,
+assets/menu-sfx/, tv/icon.png, refs/main.jpg, and the screenshots in docs/.
+
+The bundled font files are distributed under the SIL Open Font License 1.1.
+Their copyright notices and license text are in tv/FONTS.txt in the source
+tree and fonts/LICENSES.txt in the TV widget.

@@ -1,0 +1,5 @@
+# Python packages used by the optional tools (not by the app or its build):
+pillow          # tools/imgdiff.py, tools/matte.py
+numpy           # tools/imgdiff.py, tools/matte.py
+opencv-python   # tools/matte.py (cutting the figure out of a screenshot)
+cryptography    # tools/headless/samsung-cert.py

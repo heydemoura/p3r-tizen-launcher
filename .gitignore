@@ -1,0 +1,22 @@
+# made by the tools
+node_modules/
+build/
+dist/
+out/
+work/
+__pycache__/
+*.pyc
+.venv/
+
+# this machine's settings (TV address, where the Tizen tools are)
+tools/local.env
+/.local/native-home/
+
+# earlier versions and reference material kept locally
+v1/
+v2/
+refs/*
+!refs/main.jpg
+
+# an empty file the Tizen tools leave behind wherever they run
+${sys:installerLogFileName}
